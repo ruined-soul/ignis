@@ -1,0 +1,152 @@
+<?php
+if (!defined('ABSPATH')) exit;
+
+// Load wallet functions (for balance)
+require_once IMW_PATH . 'firebase/wallet/wallet-functions.php';
+require_once IMW_PATH . 'firebase/wallet/reward-system.php';
+
+$user_id = isset($_GET['uid']) ? intval($_GET['uid']) : get_current_user_id();
+$current_balance = im_wallet_get_balance($user_id);
+$wallet_data = imw_get_user_wallet_data($user_id);
+$user = get_user_by('ID', $user_id);
+
+// Get recent transactions
+$transactions = im_wallet_get_transactions($user_id, 10);
+
+// Check for update status
+$update_status = isset($_GET['updated']) ? $_GET['updated'] : null;
+?>
+
+<div class="wrap imw-manage-wallet">
+    <h1 class="imw-page-title">💼 Manage User Wallet</h1>
+    
+    <?php if ($update_status === '1'): ?>
+        <div class="notice notice-success is-dismissible">
+            <p><strong>✅ Transaction processed successfully!</strong> The wallet balance has been updated.</p>
+        </div>
+    <?php elseif ($update_status === '0'): ?>
+        <div class="notice notice-error is-dismissible">
+            <p><strong>❌ Transaction failed!</strong> Please check the error details in the Debugger page.</p>
+        </div>
+    <?php endif; ?>
+
+    <div class="imw-manage-container">
+        <div class="imw-manage-left">
+            <div class="imw-card">
+                <h2>👤 User Information</h2>
+                <?php if ($user): ?>
+                    <div class="imw-user-info">
+                        <div class="imw-user-avatar">
+                            <?php echo get_avatar($user_id, 80); ?>
+                        </div>
+                        <div class="imw-user-details">
+                            <h3><?php echo esc_html($user->display_name); ?></h3>
+                            <p><strong>Username:</strong> <?php echo esc_html($user->user_login); ?></p>
+                            <p><strong>Email:</strong> <?php echo esc_html($user->user_email); ?></p>
+                            <p><strong>User ID:</strong> #<?php echo esc_html($user_id); ?></p>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <p class="imw-error">User not found.</p>
+                <?php endif; ?>
+            </div>
+            
+            <div class="imw-card">
+                <h2>💰 Wallet Statistics</h2>
+                <div class="imw-wallet-stats">
+                    <div class="imw-stat-item">
+                        <div class="imw-stat-label">Current Balance</div>
+                        <div class="imw-stat-value-large"><?php echo number_format($current_balance, 2); ?> Credits</div>
+                    </div>
+                    <div class="imw-stat-grid">
+                        <div class="imw-stat-item-small">
+                            <div class="imw-stat-label">Login Streak</div>
+                            <div class="imw-stat-value">🔥 <?php echo isset($wallet_data['login_streak']) ? $wallet_data['login_streak'] : 0; ?> days</div>
+                        </div>
+                        <div class="imw-stat-item-small">
+                            <div class="imw-stat-label">Total Logins</div>
+                            <div class="imw-stat-value"><?php echo isset($wallet_data['total_logins']) ? number_format($wallet_data['total_logins']) : 0; ?></div>
+                        </div>
+                        <div class="imw-stat-item-small">
+                            <div class="imw-stat-label">Signup Bonus</div>
+                            <div class="imw-stat-value"><?php echo isset($wallet_data['signup_bonus_claimed']) && $wallet_data['signup_bonus_claimed'] ? '✅ Claimed' : '❌ Not Claimed'; ?></div>
+                        </div>
+                        <div class="imw-stat-item-small">
+                            <div class="imw-stat-label">First Login</div>
+                            <div class="imw-stat-value"><?php echo isset($wallet_data['first_login_bonus_claimed']) && $wallet_data['first_login_bonus_claimed'] ? '✅ Claimed' : '❌ Not Claimed'; ?></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="imw-card">
+                <h2>📝 Recent Transactions</h2>
+                <?php if (!empty($transactions)): ?>
+                    <div class="imw-transaction-list">
+                        <?php foreach ($transactions as $txn): ?>
+                            <div class="imw-transaction-item-small">
+                                <div class="imw-txn-icon <?php echo esc_attr($txn['type']); ?>">
+                                    <?php echo $txn['type'] === 'credit' ? '⬆️' : '⬇️'; ?>
+                                </div>
+                                <div class="imw-txn-info">
+                                    <div class="imw-txn-desc"><?php echo esc_html($txn['description'] ?? 'Transaction'); ?></div>
+                                    <div class="imw-txn-date"><?php echo esc_html($txn['date'] ?? ''); ?></div>
+                                </div>
+                                <div class="imw-txn-amt <?php echo esc_attr($txn['type']); ?>">
+                                    <?php echo $txn['type'] === 'credit' ? '+' : '-'; ?><?php echo number_format(floatval($txn['amount']), 2); ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php else: ?>
+                    <p class="imw-no-data">No transactions yet.</p>
+                <?php endif; ?>
+            </div>
+        </div>
+        
+        <div class="imw-manage-right">
+            <div class="imw-card">
+                <h2>⚖️ Credit / Debit Wallet</h2>
+                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>" class="imw-transaction-form">
+                    <?php wp_nonce_field('im_wallet_update_action', 'im_wallet_update_nonce'); ?>
+                    <input type="hidden" name="action" value="im_wallet_update">
+
+                    <div class="imw-form-group">
+                        <label for="user_id">User ID</label>
+                        <input name="user_id" type="number" id="user_id" value="<?php echo esc_attr($user_id); ?>" class="imw-input" required>
+                    </div>
+
+                    <div class="imw-form-group">
+                        <label for="amount">Amount</label>
+                        <input name="amount" type="number" step="0.01" id="amount" class="imw-input" placeholder="0.00" required>
+                    </div>
+
+                    <div class="imw-form-group">
+                        <label for="action_type">Action</label>
+                        <select name="action_type" id="action_type" class="imw-select">
+                            <option value="credit">⬆️ Credit (Add)</option>
+                            <option value="debit">⬇️ Debit (Deduct)</option>
+                        </select>
+                    </div>
+
+                    <div class="imw-form-group">
+                        <label for="description">Description / Reason</label>
+                        <input name="description" type="text" id="description" class="imw-input" placeholder="e.g., Admin adjustment">
+                    </div>
+
+                    <button type="submit" class="button button-primary button-large imw-submit-btn">💾 Process Transaction</button>
+                </form>
+            </div>
+            
+            <div class="imw-card imw-info-card">
+                <h3>ℹ️ Quick Tips</h3>
+                <ul class="imw-tips-list">
+                    <li><strong>Credit:</strong> Adds funds to the user's wallet</li>
+                    <li><strong>Debit:</strong> Deducts funds (requires sufficient balance)</li>
+                    <li>All transactions are logged and visible in the Transaction Logs page</li>
+                    <li>Users can view their balance using the <code>[im_wallet_balance]</code> shortcode</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
